@@ -1,6 +1,9 @@
+use crate::board::BoardBuilderError::*;
+use crate::board::DropCounterError::*;
 use crate::board::GameState::*;
 use crate::board::Turn::*;
 use std::cmp::min;
+use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
@@ -199,6 +202,72 @@ impl BoardMasks {
     }
 }
 
+pub struct BoardBuilder {
+    board_masks: Rc<BoardMasks>,
+}
+
+#[derive(Debug)]
+pub enum BoardBuilderError {
+    BadCols,
+    BadDrop(DropCounterError),
+}
+
+#[derive(Debug)]
+pub enum DropCounterError {
+    GameFinished,
+    FullCol,
+}
+
+impl Display for BoardBuilderError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BadCols => write!(f, "build failed as 1 or more columns were bigger than 6"),
+            BadDrop(_) => write!(f, "build failed as drop_counter failed"),
+        }
+    }
+}
+
+impl Error for BoardBuilderError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            BadCols => None,
+            BadDrop(err) => Some(err),
+        }
+    }
+}
+
+impl Display for DropCounterError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GameFinished => write!(f, "drop_counter failed as game is over"),
+            FullCol => write!(f, "drop_counter failed as column was full"),
+        }
+    }
+}
+
+impl Error for DropCounterError {}
+
+impl BoardBuilder {
+    pub fn new(board_masks: Rc<BoardMasks>) -> Self {
+        Self { board_masks }
+    }
+
+    pub fn build(self) -> Board {
+        Board::new(self.board_masks)
+    }
+
+    pub fn build_with(self, moves: Vec<usize>) -> Result<Board, BoardBuilderError> {
+        let mut board = self.build();
+
+        for col in moves {
+            let board_col = BoardCol::new(col).ok_or(BadCols)?;
+            board.drop_counter(board_col).map_err(BadDrop)?;
+        }
+
+        Ok(board)
+    }
+}
+
 #[derive(Clone)]
 pub struct Board {
     p1_board: u64,
@@ -234,7 +303,7 @@ impl BoardCol {
 }
 
 impl Board {
-    pub fn new(board_masks: Rc<BoardMasks>) -> Board {
+    fn new(board_masks: Rc<BoardMasks>) -> Board {
         Board {
             p1_board: 0,
             p2_board: 0,
@@ -257,7 +326,7 @@ impl Board {
         let mut moves = Vec::with_capacity(7);
         for col in 0..COLS {
             let mut new_board = self.clone();
-            if new_board.drop_counter_helper(col) {
+            if new_board.drop_counter_helper(col).is_ok() {
                 Board::insert_board(&mut moves, new_board);
             }
         }
@@ -265,16 +334,18 @@ impl Board {
         moves
     }
 
-    pub fn drop_counter(&mut self, board_col: BoardCol) -> bool {
+    pub fn drop_counter(&mut self, board_col: BoardCol) -> Result<(), DropCounterError> {
         self.drop_counter_helper(board_col.0)
     }
 
-    fn drop_counter_helper(&mut self, col: usize) -> bool {
-        let InProgress = self.state else { return false };
+    fn drop_counter_helper(&mut self, col: usize) -> Result<(), DropCounterError> {
+        let InProgress = self.state else {
+            return Err(GameFinished);
+        };
 
         let row = self.column_heights[col];
         if row == ROWS {
-            false
+            Err(FullCol)
         } else {
             match self.turn {
                 P1 => self.p1_board |= self.board_masks.bit[col * 8 + row],
@@ -283,7 +354,7 @@ impl Board {
             self.column_heights[col] += 1;
             self.update_state(row, col);
 
-            true
+            Ok(())
         }
     }
 
@@ -369,19 +440,12 @@ mod tests {
 
     fn set_up_board(moves: Vec<usize>) -> Board {
         let board_masks = BoardMasks::new();
-        let mut board = Board::new(board_masks);
-
-        moves
-            .into_iter()
-            .map(|col| BoardCol::new(col).unwrap())
-            .for_each(|board_col| assert!(board.drop_counter(board_col)));
-
-        board
+        BoardBuilder::new(board_masks).build_with(moves).unwrap()
     }
 
     #[test]
     fn get_all_moves_on_empty_board() {
-        let board = set_up_board(vec![]);
+        let board = BoardBuilder::new(BoardMasks::new()).build();
         let moves = board.get_all_moves();
         assert_eq!(moves.len(), 7);
     }
@@ -410,7 +474,7 @@ mod tests {
     #[test]
     fn drop_counter_on_full_column() {
         let mut board = set_up_board(vec![0; ROWS]);
-        assert!(!board.drop_counter_helper(0));
+        assert_matches!(board.drop_counter_helper(0), Err(FullCol));
     }
 
     #[test]
@@ -446,7 +510,7 @@ mod tests {
     #[test]
     fn drop_counter_when_game_already_finished() {
         let mut board = set_up_board(vec![0, 2, 2, 3, 3, 4, 4, 5]);
-        assert!(!board.drop_counter_helper(0));
+        assert_matches!(board.drop_counter_helper(0), Err(GameFinished));
     }
 
     #[test]
