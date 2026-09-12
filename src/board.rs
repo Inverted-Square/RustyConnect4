@@ -209,8 +209,8 @@ pub struct Board {
     board_masks: Rc<BoardMasks>,
 }
 
-#[derive(Clone)]
-enum Turn {
+#[derive(Copy, Clone)]
+pub enum Turn {
     P1,
     P2,
 }
@@ -218,9 +218,7 @@ enum Turn {
 #[derive(Debug, Copy, Clone)]
 pub enum GameState {
     InProgress,
-    Draw,
-    P1Win,
-    P2Win,
+    Finished(i8),
 }
 
 pub struct BoardCol(usize);
@@ -247,6 +245,10 @@ impl Board {
         }
     }
 
+    pub fn get_turn(&self) -> Turn {
+        self.turn
+    }
+
     pub fn get_state(&self) -> GameState {
         self.state
     }
@@ -256,7 +258,7 @@ impl Board {
         for col in 0..COLS {
             let mut new_board = self.clone();
             if new_board.drop_counter_helper(col) {
-                moves.push(new_board);
+                Board::insert_board(&mut moves, new_board);
             }
         }
 
@@ -288,11 +290,11 @@ impl Board {
     fn update_state(&mut self, row: usize, col: usize) {
         if self.has_completed_line(row, col) {
             match self.turn {
-                P1 => self.state = P1Win,
-                P2 => self.state = P2Win,
+                P1 => self.state = Finished(1),
+                P2 => self.state = Finished(-1),
             }
         } else if (self.p1_board | self.p2_board) == 0x003F3F3F3F3F3F3F {
-            self.state = Draw;
+            self.state = Finished(0);
         } else {
             self.flip_turn();
         }
@@ -313,6 +315,21 @@ impl Board {
         self.turn = match self.turn {
             P1 => P2,
             P2 => P1,
+        }
+    }
+
+    fn insert_board(moves: &mut Vec<Board>, new_board: Board) {
+        if let InProgress = new_board.state {
+            moves.push(new_board);
+            return;
+        }
+
+        moves.push(new_board);
+        for idx in (1..moves.len()).rev() {
+            match moves[idx - 1].state {
+                InProgress => moves.swap(idx, idx - 1),
+                Finished(_) => return,
+            }
         }
     }
 
@@ -399,13 +416,13 @@ mod tests {
     #[test]
     fn drop_counter_leading_to_p1_win() {
         let board = set_up_board(vec![0, 0, 1, 1, 2, 2, 3]);
-        assert_matches!(board.state, P1Win);
+        assert_matches!(board.state, Finished(1));
     }
 
     #[test]
     fn drop_counter_leading_to_p2_win() {
         let board = set_up_board(vec![0, 2, 2, 3, 3, 4, 4, 5]);
-        assert_matches!(board.state, P2Win);
+        assert_matches!(board.state, Finished(-1));
     }
 
     #[test]
@@ -423,7 +440,7 @@ mod tests {
             ]
             .concat(),
         );
-        assert_matches!(board.state, Draw);
+        assert_matches!(board.state, Finished(0));
     }
 
     #[test]
