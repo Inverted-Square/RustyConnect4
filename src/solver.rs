@@ -1,7 +1,8 @@
-use crate::board::{Board, GameState::*, Turn::*};
+use crate::board::{Board, BoardBuilder, BoardMasks, GameState::*, Turn::*};
 use std::cmp::{max, min};
+use std::time::{Duration, Instant};
 
-const MAX_DEPTH: u8 = 19;
+const MAX_DEPTH: u8 = if cfg!(debug_assertions) { 14 } else { 18 };
 
 pub fn computer_move(board: &Board) -> Result<Board, &str> {
     let mut alpha = -1;
@@ -70,4 +71,41 @@ fn minimax(position: &Board, depth: u8, mut alpha: i8, mut beta: i8) -> i8 {
     }
 
     best_eval
+}
+
+pub fn run_benchmarks() {
+    let num_bench_tests = 10;
+    let sum1 = (1..=num_bench_tests)
+        .map(bench_on_empty_board)
+        .sum::<Duration>();
+    let sum2 = (1..=num_bench_tests)
+        .map(bench_on_board_with_forced_win)
+        .sum::<Duration>();
+    println!("Empty board average - {:?}", sum1 / num_bench_tests);
+    println!(
+        "Board with forced win average - {:?}",
+        sum2 / num_bench_tests
+    );
+}
+
+fn bench_on_empty_board(bench_num: u32) -> Duration {
+    let board_masks = BoardMasks::new();
+    let board = BoardBuilder::new(board_masks).build();
+    let start = Instant::now();
+    let _ = computer_move(&board);
+    let duration = start.elapsed();
+    println!("{bench_num}. Bench on empty board at depth {MAX_DEPTH} took {duration:?}.");
+    duration
+}
+
+fn bench_on_board_with_forced_win(bench_num: u32) -> Duration {
+    let board_masks = BoardMasks::new();
+    let board = BoardBuilder::new(board_masks)
+        .build_with(vec![3, 3, 4, 4])
+        .unwrap();
+    let start = Instant::now();
+    let _ = computer_move(&board);
+    let duration = start.elapsed();
+    println!("{bench_num}. Bench on board with forced win at depth {MAX_DEPTH} took {duration:?}.");
+    duration
 }
