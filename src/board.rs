@@ -272,13 +272,32 @@ impl BoardBuilder {
 
 #[derive(Clone)]
 pub struct Board {
-    p1_bits: u64,
-    p2_bits: u64,
+    player_bits: BitBoard,
     column_heights: [usize; COLS],
     turn: Turn,
     state: GameState,
-    hash_val: u64,
     masks: Rc<BoardMasks>,
+}
+
+#[derive(Copy, Clone, Default)]
+pub struct BitBoard {
+    p1_bits: u64,
+    p2_bits: u64,
+    hash_val: u64,
+}
+
+impl PartialEq<Self> for BitBoard {
+    fn eq(&self, other: &Self) -> bool {
+        self.p1_bits == other.p1_bits && self.p2_bits == other.p2_bits
+    }
+}
+
+impl Eq for BitBoard {}
+
+impl Hash for BitBoard {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash_val);
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -367,14 +386,16 @@ const ZOBRIST_TABLE: [[[u64; 2]; COLS]; ROWS] = [
 impl Board {
     fn new(board_masks: Rc<BoardMasks>) -> Board {
         Board {
-            p1_bits: 0,
-            p2_bits: 0,
+            player_bits: BitBoard::default(),
             column_heights: [0; COLS],
             turn: P1,
             state: InProgress,
-            hash_val: 0,
             masks: board_masks,
         }
+    }
+
+    pub fn get_bit_board(&self) -> BitBoard {
+        self.player_bits
     }
 
     pub fn get_turn(&self) -> Turn {
@@ -411,12 +432,12 @@ impl Board {
             Err(FullCol)
         } else {
             match self.turn {
-                P1 => self.p1_bits |= self.masks.bit[col * 8 + row],
-                P2 => self.p2_bits |= self.masks.bit[col * 8 + row],
+                P1 => self.player_bits.p1_bits |= self.masks.bit[col * 8 + row],
+                P2 => self.player_bits.p2_bits |= self.masks.bit[col * 8 + row],
             }
             self.column_heights[col] += 1;
             self.update_state(row, col);
-            self.hash_val ^= ZOBRIST_TABLE[row][col][self.turn as usize];
+            self.player_bits.hash_val ^= ZOBRIST_TABLE[row][col][self.turn as usize];
 
             Ok(())
         }
@@ -428,7 +449,7 @@ impl Board {
                 P1 => self.state = Finished(1),
                 P2 => self.state = Finished(-1),
             }
-        } else if (self.p1_bits | self.p2_bits) == 0x003F_3F3F_3F3F_3F3F {
+        } else if (self.player_bits.p1_bits | self.player_bits.p2_bits) == 0x003F_3F3F_3F3F_3F3F {
             self.state = Finished(0);
         } else {
             self.flip_turn();
@@ -438,8 +459,8 @@ impl Board {
     fn has_completed_line(&self, row: usize, col: usize) -> bool {
         let checks = &self.masks.win_checks[row][col];
         let bit_board = match self.turn {
-            P1 => self.p1_bits,
-            P2 => self.p2_bits,
+            P1 => self.player_bits.p1_bits,
+            P2 => self.player_bits.p2_bits,
         };
 
         #[allow(clippy::manual_contains)]
@@ -470,9 +491,9 @@ impl Board {
 
     fn get_tile_as_char(&self, row: usize, col: usize) -> char {
         let bit = self.masks.bit[col * 8 + row];
-        if (self.p1_bits & bit) == bit {
+        if (self.player_bits.p1_bits & bit) == bit {
             'X'
-        } else if (self.p2_bits & bit) == bit {
+        } else if (self.player_bits.p2_bits & bit) == bit {
             'O'
         } else {
             ' '
@@ -494,20 +515,6 @@ impl Display for Board {
 
         board_str += "  +---------------------\n    A  B  C  D  E  F  G\n";
         write!(f, "{board_str}")
-    }
-}
-
-impl PartialEq<Self> for Board {
-    fn eq(&self, other: &Self) -> bool {
-        self.p1_bits == other.p1_bits && self.p2_bits == other.p2_bits
-    }
-}
-
-impl Eq for Board {}
-
-impl Hash for Board {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash_val);
     }
 }
 
@@ -606,9 +613,9 @@ mod tests {
         println!("================================================================");
         for check in checks {
             let mut board = Board::new(board_masks.clone());
-            board.p1_bits |= check;
-            board.p1_bits ^= board.masks.bit[col * 8 + row];
-            board.p2_bits |= board.masks.bit[col * 8 + row];
+            board.player_bits.p1_bits |= check;
+            board.player_bits.p1_bits ^= board.masks.bit[col * 8 + row];
+            board.player_bits.p2_bits |= board.masks.bit[col * 8 + row];
             println!("{board}");
         }
     }

@@ -1,5 +1,5 @@
 use crate::board::{
-    Board, BoardBuilder, BoardMasks,
+    BitBoard, Board, BoardBuilder, BoardMasks,
     GameState::Finished,
     Turn::{P1, P2},
 };
@@ -7,7 +7,7 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-const MAX_DEPTH: u8 = if cfg!(debug_assertions) { 17 } else { 20 };
+const MAX_DEPTH: u8 = if cfg!(debug_assertions) { 18 } else { 20 };
 
 pub fn computer_move(board: &Board) -> Result<Board, &str> {
     let mut alpha = -1;
@@ -52,7 +52,7 @@ fn minimax(
     depth: u8,
     mut alpha: i8,
     mut beta: i8,
-    transpositions: &mut HashMap<Board, i8>,
+    transpositions: &mut HashMap<BitBoard, i8>,
 ) -> i8 {
     if let Finished(eval) = board.get_state() {
         return eval * (depth.cast_signed() + 1);
@@ -66,10 +66,10 @@ fn minimax(
         P2 => i8::MAX,
     };
     for new_board in board.get_all_moves() {
-        let eval = match transpositions.get(&new_board) {
+        let eval = match transpositions.get(&new_board.get_bit_board()) {
             None => {
                 let found_eval = minimax(&new_board, depth - 1, alpha, beta, transpositions);
-                let _ = transpositions.insert(new_board, found_eval);
+                let _ = transpositions.insert(new_board.get_bit_board(), found_eval);
                 found_eval
             }
             Some(&stored_eval) => stored_eval,
