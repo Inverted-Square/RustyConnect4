@@ -1,4 +1,8 @@
-use crate::board::{Board, BoardBuilder, BoardMasks, GameState::*, Turn::*};
+use crate::board::{
+    Board, BoardBuilder, BoardMasks,
+    GameState::Finished,
+    Turn::{P1, P2},
+};
 use std::cmp::{max, min};
 use std::time::{Duration, Instant};
 
@@ -14,7 +18,7 @@ pub fn computer_move(board: &Board) -> Result<Board, &str> {
     let mut best_board = Err("The game is over so the computer can't move.");
     for new_board in board.get_all_moves() {
         let eval = minimax(&new_board, MAX_DEPTH - 1, alpha, beta);
-        println!("{new_board}Eval: {}\n\n", eval);
+        println!("{new_board}Eval: {eval}\n\n");
         match board.get_turn() {
             P1 => {
                 if eval > best_eval {
@@ -42,7 +46,7 @@ pub fn computer_move(board: &Board) -> Result<Board, &str> {
 
 fn minimax(position: &Board, depth: u8, mut alpha: i8, mut beta: i8) -> i8 {
     if let Finished(eval) = position.get_state() {
-        return eval * (depth as i8 + 1);
+        return eval * (depth.cast_signed() + 1);
     }
     if depth == 0 {
         return 0;
@@ -61,7 +65,7 @@ fn minimax(position: &Board, depth: u8, mut alpha: i8, mut beta: i8) -> i8 {
             }
             P2 => {
                 best_eval = min(best_eval, eval);
-                beta = min(beta, eval)
+                beta = min(beta, eval);
             }
         }
 
@@ -100,6 +104,7 @@ fn bench_on_empty_board(bench_num: u32) -> Duration {
 
 fn bench_on_board_with_forced_win(bench_num: u32) -> Duration {
     let board_masks = BoardMasks::new();
+    #[allow(clippy::unwrap_used)]
     let board = BoardBuilder::new(board_masks)
         .build_with(vec![3, 3, 4, 4])
         .unwrap();

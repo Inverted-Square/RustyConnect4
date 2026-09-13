@@ -4,5 +4,5 @@ mod board;
 mod solver;
 
 fn main() {
-    run_benchmarks()
+    run_benchmarks();
 }

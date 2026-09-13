@@ -1,9 +1,10 @@
-use crate::board::BoardBuilderError::*;
-use crate::board::DropCounterError::*;
-use crate::board::GameState::*;
-use crate::board::Turn::*;
+use crate::board::BoardBuilderError::{BadCols, BadDrop};
+use crate::board::DropCounterError::{FullCol, GameFinished};
+use crate::board::GameState::{Finished, InProgress};
+use crate::board::Turn::{P1, P2};
 use std::cmp::min;
 use std::error::Error;
+use std::fmt::Write;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 
@@ -270,12 +271,12 @@ impl BoardBuilder {
 
 #[derive(Clone)]
 pub struct Board {
-    p1_board: u64,
-    p2_board: u64,
+    p1_bits: u64,
+    p2_bits: u64,
     column_heights: [usize; COLS],
     turn: Turn,
     state: GameState,
-    board_masks: Rc<BoardMasks>,
+    masks: Rc<BoardMasks>,
 }
 
 #[derive(Copy, Clone)]
@@ -290,6 +291,7 @@ pub enum GameState {
     Finished(i8),
 }
 
+#[derive(Copy, Clone)]
 pub struct BoardCol(usize);
 
 impl BoardCol {
@@ -305,12 +307,12 @@ impl BoardCol {
 impl Board {
     fn new(board_masks: Rc<BoardMasks>) -> Board {
         Board {
-            p1_board: 0,
-            p2_board: 0,
+            p1_bits: 0,
+            p2_bits: 0,
             column_heights: [0; COLS],
             turn: P1,
             state: InProgress,
-            board_masks,
+            masks: board_masks,
         }
     }
 
@@ -348,8 +350,8 @@ impl Board {
             Err(FullCol)
         } else {
             match self.turn {
-                P1 => self.p1_board |= self.board_masks.bit[col * 8 + row],
-                P2 => self.p2_board |= self.board_masks.bit[col * 8 + row],
+                P1 => self.p1_bits |= self.masks.bit[col * 8 + row],
+                P2 => self.p2_bits |= self.masks.bit[col * 8 + row],
             }
             self.column_heights[col] += 1;
             self.update_state(row, col);
@@ -364,7 +366,7 @@ impl Board {
                 P1 => self.state = Finished(1),
                 P2 => self.state = Finished(-1),
             }
-        } else if (self.p1_board | self.p2_board) == 0x003F3F3F3F3F3F3F {
+        } else if (self.p1_bits | self.p2_bits) == 0x003F_3F3F_3F3F_3F3F {
             self.state = Finished(0);
         } else {
             self.flip_turn();
@@ -372,10 +374,10 @@ impl Board {
     }
 
     fn has_completed_line(&self, row: usize, col: usize) -> bool {
-        let checks = &self.board_masks.win_checks[row][col];
+        let checks = &self.masks.win_checks[row][col];
         let bit_board = match self.turn {
-            P1 => self.p1_board,
-            P2 => self.p2_board,
+            P1 => self.p1_bits,
+            P2 => self.p2_bits,
         };
 
         #[allow(clippy::manual_contains)]
@@ -405,10 +407,10 @@ impl Board {
     }
 
     fn get_tile_as_char(&self, row: usize, col: usize) -> char {
-        let bit = self.board_masks.bit[col * 8 + row];
-        if (self.p1_board & bit) == bit {
+        let bit = self.masks.bit[col * 8 + row];
+        if (self.p1_bits & bit) == bit {
             'X'
-        } else if (self.p2_board & bit) == bit {
+        } else if (self.p2_bits & bit) == bit {
             'O'
         } else {
             ' '
@@ -418,18 +420,18 @@ impl Board {
 
 impl Display for Board {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut board_str = String::from("\n");
+        let mut board_str = "\n".to_string();
         for row in (0..ROWS).rev() {
-            board_str += &format!("{} |", row + 1);
+            let _ = write!(board_str, "{} |", row + 1);
             for col in 0..COLS {
-                board_str += &format!(" {} ", self.get_tile_as_char(row, col));
+                let _ = write!(board_str, " {} ", self.get_tile_as_char(row, col));
             }
 
             board_str += "\n";
         }
 
         board_str += "  +---------------------\n    A  B  C  D  E  F  G\n";
-        write!(f, "{}", board_str)
+        write!(f, "{board_str}")
     }
 }
 
@@ -440,6 +442,7 @@ mod tests {
 
     fn set_up_board(moves: Vec<usize>) -> Board {
         let board_masks = BoardMasks::new();
+        #[allow(clippy::unwrap_used)]
         BoardBuilder::new(board_masks).build_with(moves).unwrap()
     }
 
@@ -518,15 +521,19 @@ mod tests {
         let board_masks = BoardMasks::new();
         for (row_idx, row) in board_masks.win_checks.iter().enumerate() {
             for (col_idx, checks) in row.iter().enumerate() {
-                println!("================================================================");
-                for check in checks {
-                    let mut board = Board::new(board_masks.clone());
-                    board.p1_board |= check;
-                    board.p1_board ^= board_masks.bit[col_idx * 8 + row_idx];
-                    board.p2_board |= board_masks.bit[col_idx * 8 + row_idx];
-                    println!("{board}");
-                }
+                display_check(checks, &board_masks, row_idx, col_idx);
             }
+        }
+    }
+
+    fn display_check(checks: &Vec<u64>, board_masks: &Rc<BoardMasks>, row: usize, col: usize) {
+        println!("================================================================");
+        for check in checks {
+            let mut board = Board::new(board_masks.clone());
+            board.p1_bits |= check;
+            board.p1_bits ^= board.masks.bit[col * 8 + row];
+            board.p2_bits |= board.masks.bit[col * 8 + row];
+            println!("{board}");
         }
     }
 }
