@@ -4,20 +4,23 @@ use crate::board::{
     Turn::{P1, P2},
 };
 use std::cmp::{max, min};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-const MAX_DEPTH: u8 = if cfg!(debug_assertions) { 14 } else { 18 };
+const MAX_DEPTH: u8 = if cfg!(debug_assertions) { 17 } else { 20 };
 
 pub fn computer_move(board: &Board) -> Result<Board, &str> {
     let mut alpha = -1;
     let mut beta = 1;
+    let mut transpositions = HashMap::new();
+
     let mut best_eval = match board.get_turn() {
         P1 => i8::MIN,
         P2 => i8::MAX,
     };
     let mut best_board = Err("The game is over so the computer can't move.");
     for new_board in board.get_all_moves() {
-        let eval = minimax(&new_board, MAX_DEPTH - 1, alpha, beta);
+        let eval = minimax(&new_board, MAX_DEPTH - 1, alpha, beta, &mut transpositions);
         println!("{new_board}Eval: {eval}\n\n");
         match board.get_turn() {
             P1 => {
@@ -44,21 +47,35 @@ pub fn computer_move(board: &Board) -> Result<Board, &str> {
     best_board
 }
 
-fn minimax(position: &Board, depth: u8, mut alpha: i8, mut beta: i8) -> i8 {
-    if let Finished(eval) = position.get_state() {
+fn minimax(
+    board: &Board,
+    depth: u8,
+    mut alpha: i8,
+    mut beta: i8,
+    transpositions: &mut HashMap<Board, i8>,
+) -> i8 {
+    if let Finished(eval) = board.get_state() {
         return eval * (depth.cast_signed() + 1);
     }
     if depth == 0 {
         return 0;
     }
 
-    let mut best_eval = match position.get_turn() {
+    let mut best_eval = match board.get_turn() {
         P1 => i8::MIN,
         P2 => i8::MAX,
     };
-    for child in position.get_all_moves() {
-        let eval = minimax(&child, depth - 1, alpha, beta);
-        match position.get_turn() {
+    for new_board in board.get_all_moves() {
+        let eval = match transpositions.get(&new_board) {
+            None => {
+                let found_eval = minimax(&new_board, depth - 1, alpha, beta, transpositions);
+                let _ = transpositions.insert(new_board, found_eval);
+                found_eval
+            }
+            Some(&stored_eval) => stored_eval,
+        };
+
+        match board.get_turn() {
             P1 => {
                 best_eval = max(best_eval, eval);
                 alpha = max(alpha, eval);
