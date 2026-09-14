@@ -1,5 +1,5 @@
 use crate::board_masks_generator::BoardMasks;
-use crate::solver::bench_solver;
+use crate::solver::bench::bench_solver;
 use std::env::args;
 
 mod board;
