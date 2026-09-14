@@ -273,6 +273,7 @@ impl BoardBuilder {
 #[derive(Clone)]
 pub struct Board {
     player_bits: BitBoard,
+    mirror_bits: BitBoard,
     column_heights: [usize; COLS],
     turn: Turn,
     state: GameState,
@@ -387,6 +388,7 @@ impl Board {
     fn new(board_masks: Rc<BoardMasks>) -> Board {
         Board {
             player_bits: BitBoard::default(),
+            mirror_bits: BitBoard::default(),
             column_heights: [0; COLS],
             turn: P1,
             state: InProgress,
@@ -396,6 +398,10 @@ impl Board {
 
     pub fn get_player_bits(&self) -> BitBoard {
         self.player_bits
+    }
+
+    pub fn get_mirror_bits(&self) -> BitBoard {
+        self.mirror_bits
     }
 
     pub fn get_turn(&self) -> Turn {
@@ -429,18 +435,25 @@ impl Board {
 
         let row = self.column_heights[col];
         if row == ROWS {
-            Err(FullCol)
-        } else {
-            match self.turn {
-                P1 => self.player_bits.p1_bits |= self.masks.bit[col * 8 + row],
-                P2 => self.player_bits.p2_bits |= self.masks.bit[col * 8 + row],
-            }
-            self.column_heights[col] += 1;
-            self.update_state(row, col);
-            self.player_bits.hash_val ^= ZOBRIST_TABLE[row][col][self.turn as usize];
-
-            Ok(())
+            return Err(FullCol);
         }
+
+        match self.turn {
+            P1 => {
+                self.player_bits.p1_bits |= self.masks.bit[col * 8 + row];
+                self.mirror_bits.p1_bits |= self.masks.bit[(COLS - col - 1) * 8 + (row)];
+            }
+            P2 => {
+                self.player_bits.p2_bits |= self.masks.bit[col * 8 + row];
+                self.mirror_bits.p2_bits |= self.masks.bit[(COLS - col - 1) * 8 + (row)];
+            }
+        }
+        self.column_heights[col] += 1;
+        self.update_state(row, col);
+        self.player_bits.hash_val ^= ZOBRIST_TABLE[row][col][self.turn as usize];
+        self.mirror_bits.hash_val ^= ZOBRIST_TABLE[row][COLS - col - 1][self.turn as usize];
+
+        Ok(())
     }
 
     fn update_state(&mut self, row: usize, col: usize) {

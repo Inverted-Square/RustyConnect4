@@ -20,7 +20,16 @@ pub fn computer_move(board: &Board) -> Result<Board, &str> {
     };
     let mut best_board = Err("The game is over so the computer can't move.");
     for new_board in board.get_all_moves() {
-        let eval = minimax(&new_board, MAX_DEPTH - 1, alpha, beta, &mut transpositions);
+        let eval = if let Some(&stored_eval) = transpositions.get(&new_board.get_player_bits()) {
+            stored_eval
+        } else if let Some(&stored_eval) = transpositions.get(&new_board.get_mirror_bits()) {
+            stored_eval
+        } else {
+            let found_eval = minimax(&new_board, MAX_DEPTH - 1, alpha, beta, &mut transpositions);
+            let _ = transpositions.insert(new_board.get_player_bits(), found_eval);
+            found_eval
+        };
+
         println!("{new_board}Eval: {eval}\n\n");
         match board.get_turn() {
             P1 => {
@@ -66,13 +75,14 @@ fn minimax(
         P2 => i8::MAX,
     };
     for new_board in board.get_all_moves() {
-        let eval = match transpositions.get(&new_board.get_player_bits()) {
-            None => {
-                let found_eval = minimax(&new_board, depth - 1, alpha, beta, transpositions);
-                let _ = transpositions.insert(new_board.get_player_bits(), found_eval);
-                found_eval
-            }
-            Some(&stored_eval) => stored_eval,
+        let eval = if let Some(&stored_eval) = transpositions.get(&new_board.get_player_bits()) {
+            stored_eval
+        } else if let Some(&stored_eval) = transpositions.get(&new_board.get_mirror_bits()) {
+            stored_eval
+        } else {
+            let found_eval = minimax(&new_board, depth - 1, alpha, beta, transpositions);
+            let _ = transpositions.insert(new_board.get_player_bits(), found_eval);
+            found_eval
         };
 
         match board.get_turn() {
