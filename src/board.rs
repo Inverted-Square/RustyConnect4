@@ -394,7 +394,7 @@ impl Board {
         }
     }
 
-    pub fn get_bit_board(&self) -> BitBoard {
+    pub fn get_player_bits(&self) -> BitBoard {
         self.player_bits
     }
 
