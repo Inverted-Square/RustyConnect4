@@ -1,5 +1,5 @@
 use crate::board::{
-    BitBoard, Board, BoardBuilder, BoardMasks,
+    BitBoard, Board,
     GameState::Finished,
     Turn::{P1, P2},
 };
@@ -94,7 +94,7 @@ fn minimax(
     best_eval
 }
 
-pub fn run_benchmarks() {
+pub fn bench_solver() {
     let num_bench_tests = 10;
     let sum1 = (1..=num_bench_tests)
         .map(bench_on_empty_board)
@@ -110,8 +110,7 @@ pub fn run_benchmarks() {
 }
 
 fn bench_on_empty_board(bench_num: u32) -> Duration {
-    let board_masks = BoardMasks::new();
-    let board = BoardBuilder::new(board_masks).build();
+    let board = Board::default();
     let start = Instant::now();
     let _ = computer_move(&board);
     let duration = start.elapsed();
@@ -120,11 +119,14 @@ fn bench_on_empty_board(bench_num: u32) -> Duration {
 }
 
 fn bench_on_board_with_forced_win(bench_num: u32) -> Duration {
-    let board_masks = BoardMasks::new();
-    #[allow(clippy::unwrap_used)]
-    let board = BoardBuilder::new(board_masks)
-        .build_with(vec![3, 3, 4, 4])
-        .unwrap();
+    let board = match Board::new(vec![3, 3, 4, 4]) {
+        Ok(board) => board,
+        Err(err) => {
+            println!("Error: {err}");
+            return Duration::default();
+        }
+    };
+
     let start = Instant::now();
     let _ = computer_move(&board);
     let duration = start.elapsed();

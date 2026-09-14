@@ -1,282 +1,33 @@
-use crate::board::BoardBuilderError::{BadCols, BadDrop};
+use crate::board::BoardBuildError::{BadCols, BadDrop};
 use crate::board::DropCounterError::{FullCol, GameFinished};
 use crate::board::GameState::{Finished, InProgress};
 use crate::board::Turn::{P1, P2};
-use std::cmp::min;
 use std::error::Error;
 use std::fmt::Write;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::rc::Rc;
 
-const ROWS: usize = 6;
-const COLS: usize = 7;
+pub const ROWS: usize = 6;
+pub const COLS: usize = 7;
 
-pub struct BoardMasks {
-    bit: Vec<u64>,
-    win_checks: Vec<Vec<Vec<u64>>>,
-}
+#[rustfmt::skip]
+#[allow(clippy::unreadable_literal, reason = "They're just constants for specific binary numbers")]
+const BIT: [u64; 64] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152, 4194304, 8388608, 16777216, 33554432, 67108864, 134217728, 268435456, 536870912, 1073741824, 2147483648, 4294967296, 8589934592, 17179869184, 34359738368, 68719476736, 137438953472, 274877906944, 549755813888, 1099511627776, 2199023255552, 4398046511104, 8796093022208, 17592186044416, 35184372088832, 70368744177664, 140737488355328, 281474976710656, 562949953421312, 1125899906842624, 2251799813685248, 4503599627370496, 9007199254740992, 18014398509481984, 36028797018963968, 72057594037927936, 144115188075855872, 288230376151711744, 576460752303423488, 1152921504606846976, 2305843009213693952, 4611686018427387904, 9223372036854775808];
 
-impl BoardMasks {
-    pub fn new() -> Rc<Self> {
-        let mut board_masks = Self {
-            bit: (0..64).map(|idx| 1 << idx).collect(),
-            win_checks: vec![vec![vec![]; COLS]; ROWS],
-        };
-        board_masks.set_win_checks();
-        Rc::new(board_masks)
-    }
+#[rustfmt::skip]
+#[allow(clippy::unreadable_literal, reason = "They're just constants for specific binary numbers")]
+const WIN_CHECKS: [[&[u64]; COLS]; ROWS] = [[&[16843009, 134480385], &[16843009, 4311810304, 34426978560], &[16843009, 4311810304, 1103823437824, 8813306511360], &[16843009, 4311810304, 1103823437824, 282578800082944, 16909320, 2256206466908160], &[4311810304, 1103823437824, 282578800082944, 4328785920], &[1103823437824, 282578800082944, 1108169195520], &[282578800082944, 283691314053120]], [&[33686018, 268960770], &[33686018, 8623620608, 134480385, 68853957120], &[33686018, 8623620608, 2207646875648, 16909320, 34426978560, 17626613022720], &[33686018, 8623620608, 2207646875648, 565157600165888, 33818640, 4328785920, 8813306511360, 4512412933816320], &[8623620608, 2207646875648, 565157600165888, 8657571840, 1108169195520, 2256206466908160], &[2207646875648, 565157600165888, 2216338391040, 283691314053120], &[565157600165888, 567382628106240]], [&[67372036, 537921540], &[67372036, 17247241216, 16909320, 268960770, 137707914240], &[67372036, 17247241216, 4415293751296, 33818640, 4328785920, 134480385, 68853957120, 35253226045440], &[67372036, 17247241216, 4415293751296, 1130315200331776, 67637280, 8657571840, 1108169195520, 34426978560, 17626613022720, 9024825867632640], &[17247241216, 4415293751296, 1130315200331776, 17315143680, 2216338391040, 283691314053120, 8813306511360, 4512412933816320], &[4415293751296, 1130315200331776, 4432676782080, 567382628106240, 2256206466908160], &[1130315200331776, 1134765256212480]], [&[134744072, 16909320, 15], &[134744072, 34494482432, 33818640, 4328785920, 537921540, 3840], &[134744072, 34494482432, 8830587502592, 67637280, 8657571840, 1108169195520, 268960770, 137707914240, 983040], &[134744072, 34494482432, 8830587502592, 2260630400663552, 17315143680, 2216338391040, 283691314053120, 134480385, 68853957120, 35253226045440, 251658240], &[34494482432, 8830587502592, 2260630400663552, 4432676782080, 567382628106240, 34426978560, 17626613022720, 9024825867632640, 64424509440], &[8830587502592, 2260630400663552, 1134765256212480, 8813306511360, 4512412933816320, 16492674416640], &[2260630400663552, 2256206466908160, 4222124650659840]], [&[269488144, 33818640, 30], &[269488144, 68988964864, 67637280, 8657571840, 7680], &[269488144, 68988964864, 17661175005184, 17315143680, 2216338391040, 537921540, 1966080], &[269488144, 68988964864, 17661175005184, 4521260801327104, 4432676782080, 567382628106240, 268960770, 137707914240, 503316480], &[68988964864, 17661175005184, 4521260801327104, 1134765256212480, 68853957120, 35253226045440, 128849018880], &[17661175005184, 4521260801327104, 17626613022720, 9024825867632640, 32985348833280], &[4521260801327104, 4512412933816320, 8444249301319680]], [&[538976288, 67637280, 60], &[538976288, 137977929728, 17315143680, 15360], &[538976288, 137977929728, 35322350010368, 4432676782080, 3932160], &[538976288, 137977929728, 35322350010368, 9042521602654208, 1134765256212480, 537921540, 1006632960], &[137977929728, 35322350010368, 9042521602654208, 137707914240, 257698037760], &[35322350010368, 9042521602654208, 35253226045440, 65970697666560], &[9042521602654208, 9024825867632640, 16888498602639360]]];
 
-    fn set_win_checks(&mut self) {
-        for row in 0..ROWS {
-            for col in 0..COLS {
-                /* Note that row will be interpreted as a row on the board where 0 is the bottom.
-                 * So a mask added to row 0 in win_checks will be for the bottom of the board, even
-                 * though if you try to visualise win_checks as a 2D array row 0 is at the "top".
-                 */
-                self.add_horizontal_checks(row, col);
-                self.add_diagonal1_checks(row, col);
-                self.add_diagonal2_checks(row, col);
-                self.add_vertical_check(row, col);
-            }
-        }
-    }
+#[rustfmt::skip]
+#[allow(clippy::unreadable_literal, reason = "They're just random numbers for hashing")]
+const ZOBRIST_TABLE: [[[u64; 2]; COLS]; ROWS] = [[[9351543000069148727, 5691933524360276676], [9147536183333472440, 17549656232030087907], [5562979162874276111, 4215143189366588270], [17207351728752092811, 9231081037056901349], [2477476474377656062, 16866343659304088472], [10893974287695793347, 9228792675638351133], [4657704497154974639, 18210602477669909631]], [[7061702949332388589, 14276056753460234363], [8348351524084627068, 478462755017893193], [7444918653097023780, 5176717050937306791], [1986487973583215326, 18136546716676371530], [17929250101224492385, 5589671207470731658], [13260828001632126366, 12967730261195639562], [9063522003766710743, 2374717761508042399]], [[3026974079049156385, 9955688699042696796], [9014700098095053840, 2243906978976509320], [5404087178935388157, 12154374279952473092], [8122716050300030240, 6044413828283743443], [2926490043870920578, 1844273341041146771], [18061812195486304151, 17408569648803377895], [11034092129662992875, 9463455164115100627]], [[14220167580117014545, 13138781109727440810], [13521671292216768147, 1246666947883262128], [15136837964180520243, 5404390819736584762], [4618858759546036375, 13782952762990999500], [2026914633184229991, 4795605775300495685], [16154646453133813365, 17547545170322516086], [11093730159042650627, 18049464735842824199]], [[7177263294104962059, 2372937991963160167], [11747799407082374897, 2593846908880165321], [9177549805582938141, 1410249117128530222], [15124124645558580629, 3359900549929608144], [5471878864843508202, 2380576746614701906], [14600151983340132708, 5571980405572412002], [13724864714577765393, 16041329946984188225]], [[12327895548274155578, 6054039446160875415], [13205435451647096321, 8502271719022006447], [13501478777981532461, 15941893788333859783], [6698994516329878211, 13103681521163299285], [14265291345454588705, 568955121651295797], [306806888309149821, 14114546947230079571], [14170255324682069141, 7097331192898184724]]];
 
-    fn add_horizontal_checks(&mut self, row: usize, col: usize) {
-        /* Below I've listed what horizontal lines to check based on the column the counter was
-         * placed. The lists of numbers on the right are the starting indices for the line - with
-         * the other 3 counters for that line being to the right of it (hence the name
-         * leftmost_col). With these starting indices, you'll get all the lines that pass through
-         * their given column. The messy RangeInclusive below produces the starting indices needed
-         * for any given column.
-         * Col 0 -> 0
-         * Col 1 -> 0, 1
-         * Col 2 -> 0, 1, 2
-         * Col 3 -> 0, 1, 2, 3
-         * Col 4 -> 1, 2, 3
-         * Col 5 -> 2, 3
-         * Col 6 -> 3
-         */
-        for leftmost_col in col.saturating_sub(3)..=min(col, 3) {
-            self.win_checks[row][col].push(
-                self.bit[leftmost_col * 8 + row]
-                    | self.bit[(leftmost_col + 1) * 8 + row]
-                    | self.bit[(leftmost_col + 2) * 8 + row]
-                    | self.bit[(leftmost_col + 3) * 8 + row],
-            );
-        }
-    }
-
-    fn add_diagonal1_checks(&mut self, row: usize, col: usize) {
-        /* "row + col" gives these values in the board below (A is 10 and B is 11). This lets you
-         * know what bit masks to get for the given row and col.
-         * 5 | 5 6 7 8 9 A B
-         * 4 | 4 5 6 7 8 9 A
-         * 3 | 3 4 5 6 7 8 9
-         * 2 | 2 3 4 5 6 7 8
-         * 1 | 1 2 3 4 5 6 7
-         * 0 | O 1 2 3 4 5 6
-         *   +--------------
-         *     0 1 2 3 4 5 6
-         */
-
-        let checks = &mut self.win_checks[row][col];
-        let bit = &self.bit;
-        match row + col {
-            3 => checks.push(bit[3] | bit[10] | bit[17] | bit[24]),
-            8 => checks.push(bit[29] | bit[36] | bit[43] | bit[50]),
-            4 => {
-                if col < 4 {
-                    checks.push(bit[4] | bit[11] | bit[18] | bit[25]);
-                }
-                if col > 0 {
-                    checks.push(bit[11] | bit[18] | bit[25] | bit[32]);
-                }
-            }
-            7 => {
-                if col < 6 {
-                    checks.push(bit[21] | bit[28] | bit[35] | bit[42]);
-                }
-                if col > 2 {
-                    checks.push(bit[28] | bit[35] | bit[42] | bit[49]);
-                }
-            }
-            5 => {
-                if col < 4 {
-                    checks.push(bit[5] | bit[12] | bit[19] | bit[26]);
-                }
-                if col > 0 && col < 5 {
-                    checks.push(bit[12] | bit[19] | bit[26] | bit[33]);
-                }
-                if col > 1 {
-                    checks.push(bit[19] | bit[26] | bit[33] | bit[40]);
-                }
-            }
-            6 => {
-                if col < 5 {
-                    checks.push(bit[13] | bit[20] | bit[27] | bit[34]);
-                }
-                if col > 1 && col < 6 {
-                    checks.push(bit[20] | bit[27] | bit[34] | bit[41]);
-                }
-                if col > 2 {
-                    checks.push(bit[27] | bit[34] | bit[41] | bit[48]);
-                }
-            }
-            _ => (),
-        }
-    }
-
-    fn add_diagonal2_checks(&mut self, row: usize, col: usize) {
-        /* "(ROWS - row - 1) + col" gives these values in the board below (A is 10 and B is 11).
-         * This lets you know what bit masks to get for the given row and col. Note that for these
-         * diagonals the rows have been reversed so that the sums go along the right lines.
-         * 0 | O 1 2 3 4 5 6
-         * 1 | 1 2 3 4 5 6 7
-         * 2 | 2 3 4 5 6 7 8
-         * 3 | 3 4 5 6 7 8 9
-         * 4 | 4 5 6 7 8 9 A
-         * 5 | 5 6 7 8 9 A B
-         *   +--------------
-         *     0 1 2 3 4 5 6
-         */
-
-        let checks = &mut self.win_checks[row][col];
-        let bit = &self.bit;
-        match (ROWS - row - 1) + col {
-            3 => checks.push(bit[2] | bit[11] | bit[20] | bit[29]),
-            8 => checks.push(bit[24] | bit[33] | bit[42] | bit[51]),
-            4 => {
-                if col < 4 {
-                    checks.push(bit[1] | bit[10] | bit[19] | bit[28]);
-                }
-                if col > 0 {
-                    checks.push(bit[10] | bit[19] | bit[28] | bit[37]);
-                }
-            }
-            7 => {
-                if col < 6 {
-                    checks.push(bit[16] | bit[25] | bit[34] | bit[43]);
-                }
-                if col > 2 {
-                    checks.push(bit[25] | bit[34] | bit[43] | bit[52]);
-                }
-            }
-            5 => {
-                if col < 4 {
-                    checks.push(bit[0] | bit[9] | bit[18] | bit[27]);
-                }
-                if col > 0 && col < 5 {
-                    checks.push(bit[9] | bit[18] | bit[27] | bit[36]);
-                }
-                if col > 1 {
-                    checks.push(bit[18] | bit[27] | bit[36] | bit[45]);
-                }
-            }
-            6 => {
-                if col < 5 {
-                    checks.push(bit[8] | bit[17] | bit[26] | bit[35]);
-                }
-                if col > 1 && col < 6 {
-                    checks.push(bit[17] | bit[26] | bit[35] | bit[44]);
-                }
-                if col > 2 {
-                    checks.push(bit[26] | bit[35] | bit[44] | bit[53]);
-                }
-            }
-            _ => (),
-        }
-    }
-
-    fn add_vertical_check(&mut self, row: usize, col: usize) {
-        // You only need to check down so if there's no space then we can return early.
-        if row < 3 {
-            return;
-        }
-
-        let bit_pos = col * 8 + row;
-        self.win_checks[row][col].push(
-            self.bit[bit_pos]
-                | self.bit[bit_pos - 1]
-                | self.bit[bit_pos - 2]
-                | self.bit[bit_pos - 3],
-        );
-    }
-}
-
-pub struct BoardBuilder {
-    board_masks: Rc<BoardMasks>,
-}
-
-#[derive(Debug)]
-pub enum BoardBuilderError {
-    BadCols,
-    BadDrop(DropCounterError),
-}
-
-#[derive(Debug)]
-pub enum DropCounterError {
-    GameFinished,
-    FullCol,
-}
-
-impl Display for BoardBuilderError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            BadCols => write!(f, "build failed as 1 or more columns were bigger than 6"),
-            BadDrop(_) => write!(f, "build failed as drop_counter failed"),
-        }
-    }
-}
-
-impl Error for BoardBuilderError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            BadCols => None,
-            BadDrop(err) => Some(err),
-        }
-    }
-}
-
-impl Display for DropCounterError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GameFinished => write!(f, "drop_counter failed as game is over"),
-            FullCol => write!(f, "drop_counter failed as column was full"),
-        }
-    }
-}
-
-impl Error for DropCounterError {}
-
-impl BoardBuilder {
-    pub fn new(board_masks: Rc<BoardMasks>) -> Self {
-        Self { board_masks }
-    }
-
-    pub fn build(self) -> Board {
-        Board::new(self.board_masks)
-    }
-
-    pub fn build_with(self, moves: Vec<usize>) -> Result<Board, BoardBuilderError> {
-        let mut board = self.build();
-
-        for col in moves {
-            let board_col = BoardCol::new(col).ok_or(BadCols)?;
-            board.drop_counter(board_col).map_err(BadDrop)?;
-        }
-
-        Ok(board)
-    }
-}
-
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Board {
     player_bits: BitBoard,
     column_heights: [usize; COLS],
     turn: Turn,
     state: GameState,
-    masks: Rc<BoardMasks>,
 }
 
 #[derive(Copy, Clone, Default)]
@@ -300,98 +51,29 @@ impl Hash for BitBoard {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub enum Turn {
+    #[default]
     P1,
     P2,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub enum GameState {
+    #[default]
     InProgress,
     Finished(i8),
 }
 
-#[derive(Copy, Clone)]
-pub struct BoardCol(usize);
-
-impl BoardCol {
-    pub fn new(col: usize) -> Option<BoardCol> {
-        if col < COLS {
-            Some(BoardCol(col))
-        } else {
-            None
-        }
-    }
-}
-
-#[allow(clippy::unreadable_literal)]
-const ZOBRIST_TABLE: [[[u64; 2]; COLS]; ROWS] = [
-    [
-        [7333488018022043833, 12033127012136553872],
-        [11235146718974122236, 6142471079927505351],
-        [15779778616537610674, 1513122803371492922],
-        [5933349921179252093, 17142702352802904274],
-        [66117931640798043, 8213413144692526208],
-        [1418403239985476864, 12377029861314296675],
-        [12039800139650555576, 14504502570747933104],
-    ],
-    [
-        [9295999395946111510, 4875401714966382199],
-        [16922361143817407278, 9255001878155926515],
-        [10596765190296419874, 11384938449924222779],
-        [12168077685563685624, 16730139962580781976],
-        [2556262612145118919, 3605131063752539126],
-        [2097649731591019715, 17275322501377270601],
-        [12621331004165866847, 5869928669314388742],
-    ],
-    [
-        [6355523109146906769, 11645545106095865147],
-        [6372456984544454859, 11302553235791216200],
-        [9139990940870540492, 12280145470508011794],
-        [17889458032504241984, 5707707131043538989],
-        [18276722972367581185, 1082184316249820515],
-        [15717184662247094617, 5211668227615066183],
-        [14073218027084801399, 2248138598632388120],
-    ],
-    [
-        [11873610784314726579, 4279348258080673785],
-        [15312740786199135985, 8263224936050456488],
-        [17162344537251351860, 8586293995952156674],
-        [1271336041147102922, 3083697521575398871],
-        [9725720918916253447, 12297403367359484991],
-        [10083365627401625455, 3357511357097204350],
-        [17360700213035354058, 16956326676255534486],
-    ],
-    [
-        [7224051233047586593, 15628018245287117383],
-        [11649877603231716032, 9480033689516453706],
-        [15768922144583627884, 11539514739090744224],
-        [16288076797134831784, 13232874989160674449],
-        [870971808004925519, 3018864787496705410],
-        [13984040072771282894, 12191556683252367089],
-        [9209248682655691192, 10574253423375337055],
-    ],
-    [
-        [2047750007724521309, 2373080130849566288],
-        [4870423178282974282, 3087418602391627001],
-        [17649934597159051152, 13229474553779524057],
-        [1718685991642192216, 16702669177869685328],
-        [17031692320353720068, 1185496184339440849],
-        [4109135055028343197, 14328873641084251894],
-        [9728144068774807651, 13543681895953910596],
-    ],
-];
-
 impl Board {
-    fn new(board_masks: Rc<BoardMasks>) -> Board {
-        Board {
-            player_bits: BitBoard::default(),
-            column_heights: [0; COLS],
-            turn: P1,
-            state: InProgress,
-            masks: board_masks,
+    pub fn new(moves: Vec<usize>) -> Result<Self, BoardBuildError> {
+        let mut board = Board::default();
+        for col in moves {
+            let board_col = BoardCol::new(col).ok_or(BadCols)?;
+            board.drop_counter(board_col).map_err(BadDrop)?;
         }
+
+        Ok(board)
     }
 
     pub fn get_player_bits(&self) -> BitBoard {
@@ -432,8 +114,8 @@ impl Board {
             Err(FullCol)
         } else {
             match self.turn {
-                P1 => self.player_bits.p1_bits |= self.masks.bit[col * 8 + row],
-                P2 => self.player_bits.p2_bits |= self.masks.bit[col * 8 + row],
+                P1 => self.player_bits.p1_bits |= BIT[col * 8 + row],
+                P2 => self.player_bits.p2_bits |= BIT[col * 8 + row],
             }
             self.column_heights[col] += 1;
             self.update_state(row, col);
@@ -457,13 +139,13 @@ impl Board {
     }
 
     fn has_completed_line(&self, row: usize, col: usize) -> bool {
-        let checks = &self.masks.win_checks[row][col];
+        let checks = WIN_CHECKS[row][col];
         let bit_board = match self.turn {
             P1 => self.player_bits.p1_bits,
             P2 => self.player_bits.p2_bits,
         };
 
-        #[allow(clippy::manual_contains)]
+        #[allow(clippy::manual_contains, reason = "The closure can't be simplified")]
         checks.iter().any(|&check| (bit_board & check) == check)
     }
 
@@ -475,22 +157,16 @@ impl Board {
     }
 
     fn insert_board(moves: &mut Vec<Board>, new_board: Board) {
-        if let InProgress = new_board.state {
-            moves.push(new_board);
-            return;
-        }
-
         moves.push(new_board);
-        for idx in (1..moves.len()).rev() {
-            match moves[idx - 1].state {
-                InProgress => moves.swap(idx, idx - 1),
-                Finished(_) => return,
-            }
-        }
+        let last_idx = moves.len() - 1;
+        let InProgress = moves[last_idx].state else {
+            moves.swap(0, last_idx);
+            return;
+        };
     }
 
     fn get_tile_as_char(&self, row: usize, col: usize) -> char {
-        let bit = self.masks.bit[col * 8 + row];
+        let bit = BIT[col * 8 + row];
         if (self.player_bits.p1_bits & bit) == bit {
             'X'
         } else if (self.player_bits.p2_bits & bit) == bit {
@@ -518,66 +194,115 @@ impl Display for Board {
     }
 }
 
+#[derive(Debug)]
+pub enum BoardBuildError {
+    BadCols,
+    BadDrop(DropCounterError),
+}
+
+#[derive(Debug)]
+pub enum DropCounterError {
+    GameFinished,
+    FullCol,
+}
+
+impl Display for BoardBuildError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BadCols => write!(f, "build failed as 1 or more columns were bigger than 6"),
+            BadDrop(_) => write!(f, "build failed as drop_counter failed"),
+        }
+    }
+}
+
+impl Error for BoardBuildError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            BadCols => None,
+            BadDrop(err) => Some(err),
+        }
+    }
+}
+
+impl Display for DropCounterError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GameFinished => write!(f, "drop_counter failed as game is over"),
+            FullCol => write!(f, "drop_counter failed as column was full"),
+        }
+    }
+}
+
+impl Error for DropCounterError {}
+
+#[derive(Copy, Clone)]
+pub struct BoardCol(usize);
+
+impl BoardCol {
+    pub fn new(col: usize) -> Option<BoardCol> {
+        if col < COLS {
+            Some(BoardCol(col))
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
+#[allow(clippy::unwrap_used, reason = "It's for tests where a panic is wanted")]
 mod tests {
     use super::*;
     use std::assert_matches;
 
-    fn set_up_board(moves: Vec<usize>) -> Board {
-        let board_masks = BoardMasks::new();
-        #[allow(clippy::unwrap_used)]
-        BoardBuilder::new(board_masks).build_with(moves).unwrap()
-    }
-
     #[test]
     fn get_all_moves_on_empty_board() {
-        let board = BoardBuilder::new(BoardMasks::new()).build();
+        let board = Board::default();
         let moves = board.get_all_moves();
         assert_eq!(moves.len(), 7);
     }
 
     #[test]
     fn get_all_moves_on_non_empty_board_with_no_full_columns() {
-        let board = set_up_board((0..COLS).collect());
+        let board = Board::new((0..COLS).collect()).unwrap();
         let moves = board.get_all_moves();
         assert_eq!(moves.len(), 7);
     }
 
     #[test]
     fn get_all_moves_with_a_full_column() {
-        let board = set_up_board(vec![0; ROWS]);
+        let board = Board::new(vec![0; ROWS]).unwrap();
         let moves = board.get_all_moves();
         assert_eq!(moves.len(), 6);
     }
 
     #[test]
     fn get_all_moves_with_multiple_full_columns() {
-        let board = set_up_board([[0; ROWS], [2; ROWS], [6; ROWS]].concat());
+        let board = Board::new([[0; ROWS], [2; ROWS], [6; ROWS]].concat()).unwrap();
         let moves = board.get_all_moves();
         assert_eq!(moves.len(), 4);
     }
 
     #[test]
     fn drop_counter_on_full_column() {
-        let mut board = set_up_board(vec![0; ROWS]);
+        let mut board = Board::new(vec![0; ROWS]).unwrap();
         assert_matches!(board.drop_counter_helper(0), Err(FullCol));
     }
 
     #[test]
     fn drop_counter_leading_to_p1_win() {
-        let board = set_up_board(vec![0, 0, 1, 1, 2, 2, 3]);
+        let board = Board::new(vec![0, 0, 1, 1, 2, 2, 3]).unwrap();
         assert_matches!(board.state, Finished(1));
     }
 
     #[test]
     fn drop_counter_leading_to_p2_win() {
-        let board = set_up_board(vec![0, 2, 2, 3, 3, 4, 4, 5]);
+        let board = Board::new(vec![0, 2, 2, 3, 3, 4, 4, 5]).unwrap();
         assert_matches!(board.state, Finished(-1));
     }
 
     #[test]
     fn drop_counter_leading_to_draw() {
-        let board = set_up_board(
+        let board = Board::new(
             [
                 vec![0; ROWS],
                 vec![1; ROWS],
@@ -589,33 +314,33 @@ mod tests {
                 vec![6; ROWS],
             ]
             .concat(),
-        );
+        )
+        .unwrap();
         assert_matches!(board.state, Finished(0));
     }
 
     #[test]
     fn drop_counter_when_game_already_finished() {
-        let mut board = set_up_board(vec![0, 2, 2, 3, 3, 4, 4, 5]);
+        let mut board = Board::new(vec![0, 2, 2, 3, 3, 4, 4, 5]).unwrap();
         assert_matches!(board.drop_counter_helper(0), Err(GameFinished));
     }
 
     #[test]
     fn visually_confirm_board_masks_win_checks() {
-        let board_masks = BoardMasks::new();
-        for (row_idx, row) in board_masks.win_checks.iter().enumerate() {
+        for (row_idx, row) in WIN_CHECKS.iter().enumerate() {
             for (col_idx, checks) in row.iter().enumerate() {
-                display_check(checks, &board_masks, row_idx, col_idx);
+                display_check(checks, row_idx, col_idx);
             }
         }
     }
 
-    fn display_check(checks: &Vec<u64>, board_masks: &Rc<BoardMasks>, row: usize, col: usize) {
+    fn display_check(checks: &&[u64], row: usize, col: usize) {
         println!("================================================================");
-        for check in checks {
-            let mut board = Board::new(board_masks.clone());
+        for check in *checks {
+            let mut board = Board::default();
             board.player_bits.p1_bits |= check;
-            board.player_bits.p1_bits ^= board.masks.bit[col * 8 + row];
-            board.player_bits.p2_bits |= board.masks.bit[col * 8 + row];
+            board.player_bits.p1_bits ^= BIT[col * 8 + row];
+            board.player_bits.p2_bits |= BIT[col * 8 + row];
             println!("{board}");
         }
     }
