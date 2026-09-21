@@ -1,5 +1,4 @@
 use crate::board_info_generator::BoardInfo;
-use crate::group_info::{GROUPS_AT, GroupInfo};
 use crate::solver::bench::bench_solver;
 use std::env::args;
 
@@ -12,13 +11,6 @@ fn main() -> Result<(), &'static str> {
     if args().len() != 2 {
         return Err("please give *one* input argument option: [bench_solver, display_masks]");
     }
-
-    let GroupInfo {
-        mask,
-        idx,
-        positions,
-    } = GROUPS_AT[0][0][0];
-    println!("{mask}\n{idx}{positions:?}");
 
     #[allow(clippy::unwrap_used, reason = "Already checked len, so nth(1) exists")]
     let input_option = args().nth(1).unwrap();

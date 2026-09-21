@@ -8,6 +8,7 @@ use std::fmt::{Display, Formatter};
 
 pub struct BoardInfo {
     bit: [u64; 64],
+    max_viable_groups: [[u8; COLS]; ROWS],
     groups_at: [[Vec<GroupInfo>; COLS]; ROWS],
     group_indices: FxHashMap<u64, usize>,
     curr_group_idx: usize,
@@ -17,6 +18,7 @@ impl Default for BoardInfo {
     fn default() -> Self {
         let mut board_masks = Self {
             bit: array::from_fn(|idx| 1 << idx),
+            max_viable_groups: Default::default(),
             groups_at: Default::default(),
             group_indices: FxHashMap::default(),
             curr_group_idx: 0,
@@ -45,6 +47,7 @@ impl BoardInfo {
     fn add_group(&mut self, row: usize, col: usize, positions: [[usize; 2]; 4]) {
         let mask = self.mask_from(positions);
         let idx = self.idx_from(mask);
+        self.max_viable_groups[row][col] += 1;
         self.groups_at[row][col].push(GroupInfo {
             mask,
             idx,
@@ -241,8 +244,10 @@ impl Display for BoardInfo {
 
         write!(
             f,
-            "const BIT: [u64; 64] = {:?};\n\nconst GROUPS_AT: [[&[GroupInfo]; COLS]; ROWS] = {groups_at_str};",
-            self.bit
+            "pub const BIT: [u64; 64] = {:?};\n\n\
+            pub const GROUPS_AT: [[&[GroupInfo]; COLS]; ROWS] = {groups_at_str};\n\n\
+            pub const MAX_VIABLE_GROUPS: [[u8; COLS]; ROWS] = {:?};",
+            self.bit, self.max_viable_groups
         )
     }
 }
