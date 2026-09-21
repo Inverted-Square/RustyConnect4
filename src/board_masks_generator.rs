@@ -1,23 +1,39 @@
 use crate::board::{COLS, ROWS};
+use std::array;
 use std::cmp::min;
-use std::fmt::Write;
+use std::fmt::Debug;
 use std::fmt::{Display, Formatter};
+use std::ops::{Deref, DerefMut};
 
 pub struct BoardMasks {
-    bit: Vec<u64>,
-    win_checks: Vec<Vec<Vec<u64>>>,
+    bit: [u64; 64],
+    win_checks: [[Masks; COLS]; ROWS],
+}
+
+#[derive(Default)]
+struct Masks(Vec<u64>);
+
+impl Deref for Masks {
+    type Target = Vec<u64>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Masks {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Debug for Masks {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "&{:?}", self.0)
+    }
 }
 
 impl BoardMasks {
-    pub fn new() -> Self {
-        let mut board_masks = Self {
-            bit: (0..64).map(|idx| 1 << idx).collect(),
-            win_checks: vec![vec![vec![]; COLS]; ROWS],
-        };
-        board_masks.set_win_checks();
-        board_masks
-    }
-
     fn set_win_checks(&mut self) {
         for row in 0..ROWS {
             for col in 0..COLS {
@@ -195,18 +211,24 @@ impl BoardMasks {
     }
 }
 
+impl Default for BoardMasks {
+    fn default() -> Self {
+        let mut board_masks = Self {
+            bit: array::from_fn(|idx| 1 << idx),
+            win_checks: Default::default(),
+        };
+        board_masks.set_win_checks();
+        board_masks
+    }
+}
+
 impl Display for BoardMasks {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut win_checks_str = '['.to_string();
-        for row in &self.win_checks {
-            win_checks_str.push('[');
-            for col in row {
-                let _ = write!(win_checks_str, "&{col:?}, ");
-            }
-            let _ = write!(win_checks_str, "], ");
-        }
-        win_checks_str.push(']');
-
-        write!(f, "BIT: {:?}\n\nWIN_CHECKS: {:?}", self.bit, win_checks_str)
+        write!(
+            f,
+            "const BIT: [u64; 64] = {:?};\n\n\
+            const WIN_CHECKS: [[&[u64]; COLS]; ROWS] = {:?};",
+            self.bit, self.win_checks
+        )
     }
 }

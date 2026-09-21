@@ -16,7 +16,7 @@ fn main() -> Result<(), &'static str> {
     if input_option == "bench_solver" {
         bench_solver();
     } else if input_option == "display_masks" {
-        println!("{}", BoardMasks::new());
+        println!("{}", BoardMasks::default());
     } else {
         return Err("invalid argument option, the options are: [bench_solver, display_masks]");
     }

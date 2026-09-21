@@ -1,5 +1,5 @@
 use crate::board::{
-    BitBoard, Board,
+    Board,
     GameState::Finished,
     Turn::{P1, P2},
 };
@@ -51,7 +51,7 @@ fn minimax(
     depth: u8,
     mut alpha: i8,
     mut beta: i8,
-    transpositions: &mut FxHashMap<BitBoard, i8>,
+    transpositions: &mut FxHashMap<u64, i8>,
 ) -> i8 {
     if let Finished(eval) = board.get_state() {
         return eval * (depth.cast_signed() + 1);
@@ -65,10 +65,10 @@ fn minimax(
         P2 => i8::MAX,
     };
     for new_board in board.get_all_moves() {
-        let eval = match transpositions.get(&new_board.get_player_bits()) {
+        let eval = match transpositions.get(&new_board.get_hash()) {
             None => {
                 let found_eval = minimax(&new_board, depth - 1, alpha, beta, transpositions);
-                let _ = transpositions.insert(new_board.get_player_bits(), found_eval);
+                let _ = transpositions.insert(new_board.get_hash(), found_eval);
                 found_eval
             }
             Some(&stored_eval) => stored_eval,

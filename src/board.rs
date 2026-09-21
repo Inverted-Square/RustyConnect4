@@ -5,7 +5,6 @@ use crate::board::Turn::{P1, P2};
 use std::error::Error;
 use std::fmt::Write;
 use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
 
 pub const ROWS: usize = 6;
 pub const COLS: usize = 7;
@@ -25,30 +24,16 @@ const ZOBRIST_TABLE: [[[u64; 2]; COLS]; ROWS] = [[[9351543000069148727, 56919335
 #[derive(Clone, Default)]
 pub struct Board {
     player_bits: BitBoard,
-    column_heights: [usize; COLS],
+    column_heights: [u8; COLS],
     turn: Turn,
     state: GameState,
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct BitBoard {
     p1_bits: u64,
     p2_bits: u64,
     hash_val: u64,
-}
-
-impl PartialEq<Self> for BitBoard {
-    fn eq(&self, other: &Self) -> bool {
-        self.p1_bits == other.p1_bits && self.p2_bits == other.p2_bits
-    }
-}
-
-impl Eq for BitBoard {}
-
-impl Hash for BitBoard {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash_val);
-    }
 }
 
 #[derive(Copy, Clone, Default)]
@@ -76,8 +61,8 @@ impl Board {
         Ok(board)
     }
 
-    pub fn get_player_bits(&self) -> BitBoard {
-        self.player_bits
+    pub fn get_hash(&self) -> u64 {
+        self.player_bits.hash_val
     }
 
     pub fn get_turn(&self) -> Turn {
@@ -109,7 +94,7 @@ impl Board {
             return Err(GameFinished);
         };
 
-        let row = self.column_heights[col];
+        let row = self.column_heights[col] as usize;
         if row == ROWS {
             Err(FullCol)
         } else {
@@ -206,6 +191,17 @@ pub enum DropCounterError {
     FullCol,
 }
 
+impl Display for DropCounterError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GameFinished => write!(f, "drop_counter failed as game is over"),
+            FullCol => write!(f, "drop_counter failed as column was full"),
+        }
+    }
+}
+
+impl Error for DropCounterError {}
+
 impl Display for BoardBuildError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -223,17 +219,6 @@ impl Error for BoardBuildError {
         }
     }
 }
-
-impl Display for DropCounterError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            GameFinished => write!(f, "drop_counter failed as game is over"),
-            FullCol => write!(f, "drop_counter failed as column was full"),
-        }
-    }
-}
-
-impl Error for DropCounterError {}
 
 #[derive(Copy, Clone)]
 pub struct BoardCol(usize);
