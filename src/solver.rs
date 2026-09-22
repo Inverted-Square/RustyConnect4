@@ -9,6 +9,7 @@ use std::cmp::{max, min};
 const MAX_DEPTH: u8 = if cfg!(debug_assertions) { 17 } else { 20 };
 
 pub struct Solver {
+    depth: u8,
     best_board: Option<Board>,
     transpositions: FxHashMap<u64, i8>,
 }
@@ -16,20 +17,21 @@ pub struct Solver {
 impl Solver {
     pub fn new() -> Self {
         Self {
+            depth: MAX_DEPTH,
             best_board: None,
             transpositions: FxHashMap::default(),
         }
     }
 
     pub fn solve(mut self, board: &Board) -> (Option<Board>, i8) {
-        let eval = self.minimax(board, MAX_DEPTH, -1, 1);
+        let eval = self.minimax(board, -1, 1);
         (self.best_board, eval)
     }
 
-    fn minimax(&mut self, board: &Board, depth: u8, mut alpha: i8, mut beta: i8) -> i8 {
+    fn minimax(&mut self, board: &Board, mut alpha: i8, mut beta: i8) -> i8 {
         if let Finished(eval) = board.get_state() {
-            return eval * (depth.cast_signed() + 1);
-        } else if depth == 0 {
+            return eval * (self.depth.cast_signed() + 1);
+        } else if self.depth == 0 {
             return 0;
         }
 
@@ -38,10 +40,10 @@ impl Solver {
             P2 => i8::MAX,
         };
         for new_board in board.get_all_moves() {
-            let eval = self.get_eval(&new_board, depth, alpha, beta);
+            let eval = self.get_eval(&new_board, alpha, beta);
 
             #[cfg(debug_assertions)]
-            if depth == MAX_DEPTH {
+            if self.depth == MAX_DEPTH {
                 println!("{new_board}Eval: {eval}\n\n");
             }
 
@@ -58,11 +60,13 @@ impl Solver {
         best_eval
     }
 
-    fn get_eval(&mut self, board: &Board, depth: u8, alpha: i8, beta: i8) -> i8 {
+    fn get_eval(&mut self, board: &Board, alpha: i8, beta: i8) -> i8 {
         let board_hash = board.get_hash();
         match self.transpositions.get(&board_hash) {
             None => {
-                let found_eval = self.minimax(board, depth - 1, alpha, beta);
+                self.depth -= 1;
+                let found_eval = self.minimax(board, alpha, beta);
+                self.depth += 1;
                 let _ = self.transpositions.insert(board_hash, found_eval);
                 found_eval
             }
@@ -72,18 +76,23 @@ impl Solver {
 
     fn update_best_p1(&mut self, best_eval: &mut i8, eval: i8, board: Board, alpha: &mut i8) {
         if eval > *best_eval {
-            self.best_board = Some(board);
-            *best_eval = eval;
+            self.update_best_eval(board, best_eval, eval);
         }
         *alpha = max(*alpha, eval);
     }
 
     fn update_best_p2(&mut self, best_eval: &mut i8, eval: i8, board: Board, beta: &mut i8) {
         if eval < *best_eval {
-            self.best_board = Some(board);
-            *best_eval = eval;
+            self.update_best_eval(board, best_eval, eval);
         }
         *beta = min(*beta, eval);
+    }
+
+    fn update_best_eval(&mut self, board: Board, best_eval: &mut i8, eval: i8) {
+        if self.depth == MAX_DEPTH {
+            self.best_board = Some(board);
+        }
+        *best_eval = eval;
     }
 }
 
